@@ -1,5 +1,6 @@
 """Base client for modality-specific AI operations."""
 
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from json import JSONDecodeError
@@ -10,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from celeste.auth import Authentication
 from celeste.core import Modality, Provider
-from celeste.exceptions import StreamingNotSupportedError
+from celeste.exceptions import StreamingNotSupportedError, UnsupportedParameterWarning
 from celeste.http import HTTPClient, get_http_client
 from celeste.io import Chunk as ChunkBase
 from celeste.io import FinishReason, Input, Output, Usage
@@ -408,8 +409,17 @@ class ModalityClient[
         request = self._init_request(inputs)
 
         for mapper in self.parameter_mappers():
-            value = parameters.get(mapper.name)
+            value = parameters.pop(mapper.name, None)
             request = mapper.map(request, value, self.model)
+
+        for name, value in parameters.items():
+            if value is not None:
+                warnings.warn(
+                    f"Parameter '{name}' is not supported by model "
+                    f"'{self.model.id}' and will be ignored.",
+                    UnsupportedParameterWarning,
+                    stacklevel=4,
+                )
 
         if extra_body:
             self._deep_merge(request, extra_body)
