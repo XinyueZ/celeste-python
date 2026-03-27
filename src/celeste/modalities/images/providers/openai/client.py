@@ -1,6 +1,6 @@
 """OpenAI images client."""
 
-from typing import Any, Unpack
+from typing import Any
 
 from celeste.artifacts import ImageArtifact
 from celeste.parameters import ParameterMapper
@@ -17,9 +17,7 @@ from ...client import ImagesClient
 from ...io import (
     ImageChunk,
     ImageInput,
-    ImageOutput,
 )
-from ...parameters import ImageParameters
 from ...streaming import ImagesStream
 from .parameters import OPENAI_PARAMETER_MAPPERS
 
@@ -35,6 +33,9 @@ class OpenAIImagesStream(_OpenAIImagesStream, ImagesStream):
 class OpenAIImagesClient(OpenAIImagesMixin, ImagesClient):
     """OpenAI images client."""
 
+    _generate_endpoint = config.OpenAIImagesEndpoint.CREATE_IMAGE
+    _edit_endpoint = config.OpenAIImagesEndpoint.CREATE_EDIT
+
     @classmethod
     def parameter_mappers(cls) -> list[ParameterMapper[ImageContent]]:
         return OPENAI_PARAMETER_MAPPERS
@@ -47,37 +48,9 @@ class OpenAIImagesClient(OpenAIImagesMixin, ImagesClient):
             request["image"] = inputs.image
         return request
 
-    async def generate(
-        self,
-        prompt: str,
-        **parameters: Unpack[ImageParameters],
-    ) -> ImageOutput:
-        """Generate images from prompt."""
-        inputs = ImageInput(prompt=prompt)
-        return await self._predict(
-            inputs,
-            endpoint=config.OpenAIImagesEndpoint.CREATE_IMAGE,
-            **parameters,
-        )
-
-    async def edit(
-        self,
-        image: ImageArtifact,
-        prompt: str,
-        **parameters: Unpack[ImageParameters],
-    ) -> ImageOutput:
-        """Edit an image with text instructions."""
-        inputs = ImageInput(image=image, prompt=prompt)
-        return await self._predict(
-            inputs,
-            endpoint=config.OpenAIImagesEndpoint.CREATE_EDIT,
-            **parameters,
-        )
-
     def _parse_content(
         self,
         response_data: dict[str, Any],
-        **parameters: Unpack[ImageParameters],
     ) -> ImageArtifact:
         """Parse content from response."""
         data = super()._parse_content(response_data)

@@ -25,8 +25,14 @@ class Provider(StrEnum):
     ELEVENLABS = "elevenlabs"
     GROQ = "groq"
     GRADIUM = "gradium"
-    OPENRESPONSES = "openresponses"
     OLLAMA = "ollama"
+
+
+class Protocol(StrEnum):
+    """Wire format protocols for compatible APIs."""
+
+    OPENRESPONSES = "openresponses"
+    CHATCOMPLETIONS = "chatcompletions"
 
 
 class Modality(StrEnum):
@@ -143,10 +149,13 @@ DOMAIN_OPERATION_TO_MODALITY: dict[tuple[Domain, Operation], Modality] = {
     (Domain.IMAGES, Operation.GENERATE): Modality.IMAGES,
     (Domain.IMAGES, Operation.EDIT): Modality.IMAGES,
     (Domain.IMAGES, Operation.ANALYZE): Modality.TEXT,
+    (Domain.IMAGES, Operation.EMBED): Modality.EMBEDDINGS,
+    (Domain.AUDIO, Operation.EMBED): Modality.EMBEDDINGS,
     (Domain.AUDIO, Operation.SPEAK): Modality.AUDIO,
     (Domain.AUDIO, Operation.ANALYZE): Modality.TEXT,
     (Domain.VIDEOS, Operation.GENERATE): Modality.VIDEOS,
     (Domain.VIDEOS, Operation.ANALYZE): Modality.TEXT,
+    (Domain.VIDEOS, Operation.EMBED): Modality.EMBEDDINGS,
 }
 
 
@@ -167,6 +176,7 @@ __all__ = [
     "Modality",
     "Operation",
     "Parameter",
+    "Protocol",
     "Provider",
     "UsageField",
     "infer_modality",

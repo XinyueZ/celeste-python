@@ -233,6 +233,15 @@ class UnsupportedProviderError(CredentialsError):
         )
 
 
+class InvalidToolError(ValidationError):
+    """Raised when a tool item is not a Tool instance or dict."""
+
+    def __init__(self, item: object) -> None:
+        """Initialize with the invalid item."""
+        self.item = item
+        super().__init__(f"Expected Tool instance or dict, got {type(item).__name__}")
+
+
 class UnsupportedParameterError(ValidationError):
     """Raised when a parameter is not supported by a model."""
 
@@ -245,10 +254,15 @@ class UnsupportedParameterError(ValidationError):
         )
 
 
+class UnsupportedParameterWarning(UserWarning):
+    """Emitted when a parameter is not supported by a provider and will be ignored."""
+
+
 __all__ = [
     "ClientNotFoundError",
     "ConstraintViolationError",
     "Error",
+    "InvalidToolError",
     "MissingCredentialsError",
     "MissingDependencyError",
     "ModalityNotFoundError",
@@ -259,5 +273,6 @@ __all__ = [
     "StreamingNotSupportedError",
     "UnsupportedCapabilityError",
     "UnsupportedParameterError",
+    "UnsupportedParameterWarning",
     "UnsupportedProviderError",
 ]

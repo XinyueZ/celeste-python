@@ -1,32 +1,104 @@
 """Text modality client."""
 
-from typing import Any, Unpack
+import warnings
+from typing import Any, ClassVar, Unpack
 
 from asgiref.sync import async_to_sync
 
 from celeste.client import ModalityClient
 from celeste.core import InputType, Modality
+from celeste.tools import CodeExecution, WebSearch, XSearch
 from celeste.types import AudioContent, ImageContent, Message, TextContent, VideoContent
 
-from .io import TextFinishReason, TextInput, TextOutput, TextUsage
+from .io import TextChunk, TextFinishReason, TextInput, TextOutput, TextUsage
 from .parameters import TextParameters
 from .streaming import TextStream
 
 
-class TextClient(ModalityClient[TextInput, TextOutput, TextParameters, TextContent]):
-    """Base text client.
-
-    Providers implement operation methods (generate, analyze).
-    """
+class TextClient(
+    ModalityClient[TextInput, TextOutput, TextParameters, TextContent, TextChunk]
+):
+    """Base text client with generate/analyze operations."""
 
     modality: Modality = Modality.TEXT
     _usage_class = TextUsage
     _finish_reason_class = TextFinishReason
 
+    # Deprecated param → Tool class mapping.
+    # TODO(deprecation): Remove on 2026-06-07.
+    _DEPRECATED_TOOL_PARAMS: ClassVar[dict[str, type]] = {
+        "web_search": WebSearch,
+        "x_search": XSearch,
+        "code_execution": CodeExecution,
+    }
+
     @classmethod
     def _output_class(cls) -> type[TextOutput]:
         """Return the Output class for text modality."""
         return TextOutput
+
+    async def generate(
+        self,
+        prompt: str | None = None,
+        *,
+        messages: list[Message] | None = None,
+        extra_body: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+        **parameters: Unpack[TextParameters],
+    ) -> TextOutput:
+        """Generate text from prompt."""
+        inputs = TextInput(prompt=prompt, messages=messages)
+        return await self._predict(
+            inputs, extra_body=extra_body, extra_headers=extra_headers, **parameters
+        )
+
+    async def analyze(
+        self,
+        prompt: str | None = None,
+        *,
+        messages: list[Message] | None = None,
+        image: ImageContent | None = None,
+        video: VideoContent | None = None,
+        audio: AudioContent | None = None,
+        extra_body: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+        **parameters: Unpack[TextParameters],
+    ) -> TextOutput:
+        """Analyze image(s), video(s), or audio with prompt or messages."""
+        if messages is None:
+            self._check_media_support(image=image, video=video, audio=audio)
+        inputs = TextInput(
+            prompt=prompt, messages=messages, image=image, video=video, audio=audio
+        )
+        return await self._predict(
+            inputs, extra_body=extra_body, extra_headers=extra_headers, **parameters
+        )
+
+    def _build_request(
+        self,
+        inputs: TextInput,
+        extra_body: dict[str, Any] | None = None,
+        streaming: bool = False,
+        **parameters: Unpack[TextParameters],
+    ) -> dict[str, Any]:
+        """Build request, migrating deprecated boolean tool params first.
+
+        TODO(deprecation): Remove this override on 2026-06-07.
+        """
+        for old_param, tool_cls in self._DEPRECATED_TOOL_PARAMS.items():
+            value = parameters.pop(old_param, None)  # type: ignore[misc]
+            if value:
+                warnings.warn(
+                    f"'{old_param}=True' is deprecated, "
+                    f"use tools=[{tool_cls.__name__}()] instead. "
+                    "Will be removed on 2026-06-07.",
+                    DeprecationWarning,
+                    stacklevel=4,
+                )
+                parameters.setdefault("tools", []).append(tool_cls())
+        return super()._build_request(
+            inputs, extra_body=extra_body, streaming=streaming, **parameters
+        )
 
     def _check_media_support(
         self,
@@ -74,7 +146,6 @@ class TextStreamNamespace:
         prompt: str | None = None,
         *,
         messages: list[Message] | None = None,
-        base_url: str | None = None,
         extra_body: dict[str, Any] | None = None,
         extra_headers: dict[str, str] | None = None,
         **parameters: Unpack[TextParameters],
@@ -89,7 +160,6 @@ class TextStreamNamespace:
         return self._client._stream(
             inputs,
             stream_class=self._client._stream_class(),
-            base_url=base_url,
             extra_body=extra_body,
             extra_headers=extra_headers,
             **parameters,
@@ -103,7 +173,6 @@ class TextStreamNamespace:
         image: ImageContent | None = None,
         video: VideoContent | None = None,
         audio: AudioContent | None = None,
-        base_url: str | None = None,
         extra_body: dict[str, Any] | None = None,
         extra_headers: dict[str, str] | None = None,
         **parameters: Unpack[TextParameters],
@@ -128,7 +197,6 @@ class TextStreamNamespace:
         return self._client._stream(
             inputs,
             stream_class=self._client._stream_class(),
-            base_url=base_url,
             extra_body=extra_body,
             extra_headers=extra_headers,
             **parameters,
@@ -149,7 +217,6 @@ class TextSyncNamespace:
         prompt: str | None = None,
         *,
         messages: list[Message] | None = None,
-        base_url: str | None = None,
         extra_body: dict[str, Any] | None = None,
         extra_headers: dict[str, str] | None = None,
         **parameters: Unpack[TextParameters],
@@ -163,7 +230,6 @@ class TextSyncNamespace:
         inputs = TextInput(prompt=prompt, messages=messages)
         return async_to_sync(self._client._predict)(
             inputs,
-            base_url=base_url,
             extra_body=extra_body,
             extra_headers=extra_headers,
             **parameters,
@@ -177,7 +243,6 @@ class TextSyncNamespace:
         image: ImageContent | None = None,
         video: VideoContent | None = None,
         audio: AudioContent | None = None,
-        base_url: str | None = None,
         extra_body: dict[str, Any] | None = None,
         extra_headers: dict[str, str] | None = None,
         **parameters: Unpack[TextParameters],
@@ -201,7 +266,6 @@ class TextSyncNamespace:
         )
         return async_to_sync(self._client._predict)(
             inputs,
-            base_url=base_url,
             extra_body=extra_body,
             extra_headers=extra_headers,
             **parameters,
@@ -224,7 +288,6 @@ class TextSyncStreamNamespace:
         prompt: str | None = None,
         *,
         messages: list[Message] | None = None,
-        base_url: str | None = None,
         extra_body: dict[str, Any] | None = None,
         extra_headers: dict[str, str] | None = None,
         **parameters: Unpack[TextParameters],
@@ -243,7 +306,6 @@ class TextSyncStreamNamespace:
         return self._client.stream.generate(
             prompt,
             messages=messages,
-            base_url=base_url,
             extra_body=extra_body,
             extra_headers=extra_headers,
             **parameters,
@@ -257,7 +319,6 @@ class TextSyncStreamNamespace:
         image: ImageContent | None = None,
         video: VideoContent | None = None,
         audio: AudioContent | None = None,
-        base_url: str | None = None,
         extra_body: dict[str, Any] | None = None,
         extra_headers: dict[str, str] | None = None,
         **parameters: Unpack[TextParameters],
@@ -289,7 +350,6 @@ class TextSyncStreamNamespace:
             image=image,
             video=video,
             audio=audio,
-            base_url=base_url,
             extra_body=extra_body,
             extra_headers=extra_headers,
             **parameters,

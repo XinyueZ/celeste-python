@@ -1,8 +1,9 @@
 """Groq models for text modality."""
 
-from celeste.constraints import ImagesConstraint, Range, Schema
+from celeste.constraints import ImagesConstraint, Range, Schema, ToolSupport
 from celeste.core import Modality, Operation, Parameter, Provider
 from celeste.models import Model
+from celeste.tools import CodeExecution, WebSearch
 
 from ...parameters import TextParameter
 
@@ -17,6 +18,7 @@ MODELS: list[Model] = [
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0, step=0.01),
             Parameter.MAX_TOKENS: Range(min=1, max=32768, step=1),
             TextParameter.OUTPUT_SCHEMA: Schema(),
+            TextParameter.TOOLS: ToolSupport(tools=[]),
         },
     ),
     Model(
@@ -29,6 +31,7 @@ MODELS: list[Model] = [
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0, step=0.01),
             Parameter.MAX_TOKENS: Range(min=1, max=131072, step=1),
             TextParameter.OUTPUT_SCHEMA: Schema(),
+            TextParameter.TOOLS: ToolSupport(tools=[]),
         },
     ),
     Model(
@@ -41,6 +44,7 @@ MODELS: list[Model] = [
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0, step=0.01),
             Parameter.MAX_TOKENS: Range(min=1, max=40960, step=1),
             TextParameter.OUTPUT_SCHEMA: Schema(),
+            TextParameter.TOOLS: ToolSupport(tools=[]),
         },
     ),
     Model(
@@ -53,6 +57,7 @@ MODELS: list[Model] = [
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0, step=0.01),
             Parameter.MAX_TOKENS: Range(min=1, max=16384, step=1),
             TextParameter.OUTPUT_SCHEMA: Schema(),
+            TextParameter.TOOLS: ToolSupport(tools=[]),
         },
     ),
     Model(
@@ -65,6 +70,7 @@ MODELS: list[Model] = [
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0, step=0.01),
             Parameter.MAX_TOKENS: Range(min=1, max=16384, step=1),
             TextParameter.OUTPUT_SCHEMA: Schema(),
+            TextParameter.TOOLS: ToolSupport(tools=[]),
         },
     ),
     Model(
@@ -78,19 +84,7 @@ MODELS: list[Model] = [
             Parameter.MAX_TOKENS: Range(min=1, max=8192, step=1),
             TextParameter.OUTPUT_SCHEMA: Schema(),
             TextParameter.IMAGE: ImagesConstraint(),
-        },
-    ),
-    Model(
-        id="meta-llama/llama-4-maverick-17b-128e-instruct",
-        provider=Provider.GROQ,
-        display_name="Llama 4 Maverick 17B",
-        operations={Modality.TEXT: {Operation.GENERATE, Operation.ANALYZE}},
-        streaming=True,
-        parameter_constraints={
-            Parameter.TEMPERATURE: Range(min=0.0, max=2.0, step=0.01),
-            Parameter.MAX_TOKENS: Range(min=1, max=8192, step=1),
-            TextParameter.OUTPUT_SCHEMA: Schema(),
-            TextParameter.IMAGE: ImagesConstraint(),
+            TextParameter.TOOLS: ToolSupport(tools=[]),
         },
     ),
     Model(
@@ -103,6 +97,7 @@ MODELS: list[Model] = [
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0, step=0.01),
             Parameter.MAX_TOKENS: Range(min=1, max=65536, step=1),
             TextParameter.OUTPUT_SCHEMA: Schema(),
+            TextParameter.TOOLS: ToolSupport(tools=[WebSearch, CodeExecution]),
         },
     ),
     Model(
@@ -115,6 +110,7 @@ MODELS: list[Model] = [
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0, step=0.01),
             Parameter.MAX_TOKENS: Range(min=1, max=65536, step=1),
             TextParameter.OUTPUT_SCHEMA: Schema(),
+            TextParameter.TOOLS: ToolSupport(tools=[WebSearch, CodeExecution]),
         },
     ),
     Model(
@@ -127,6 +123,7 @@ MODELS: list[Model] = [
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0, step=0.01),
             Parameter.MAX_TOKENS: Range(min=1, max=65536, step=1),
             TextParameter.OUTPUT_SCHEMA: Schema(),
+            TextParameter.TOOLS: ToolSupport(tools=[WebSearch, CodeExecution]),
         },
     ),
     Model(
@@ -139,6 +136,7 @@ MODELS: list[Model] = [
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0, step=0.01),
             Parameter.MAX_TOKENS: Range(min=1, max=8192, step=1),
             TextParameter.OUTPUT_SCHEMA: Schema(),
+            TextParameter.TOOLS: ToolSupport(tools=[]),
         },
     ),
     Model(
@@ -151,6 +149,7 @@ MODELS: list[Model] = [
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0, step=0.01),
             Parameter.MAX_TOKENS: Range(min=1, max=8192, step=1),
             TextParameter.OUTPUT_SCHEMA: Schema(),
+            TextParameter.TOOLS: ToolSupport(tools=[]),
         },
     ),
     Model(
@@ -163,6 +162,7 @@ MODELS: list[Model] = [
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0, step=0.01),
             Parameter.MAX_TOKENS: Range(min=1, max=4096, step=1),
             TextParameter.OUTPUT_SCHEMA: Schema(),
+            TextParameter.TOOLS: ToolSupport(tools=[]),
         },
     ),
 ]

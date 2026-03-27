@@ -1,5 +1,6 @@
 """Base client for modality-specific AI operations."""
 
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from json import JSONDecodeError
@@ -9,14 +10,20 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from celeste.auth import Authentication
-from celeste.core import Modality, Provider
-from celeste.exceptions import StreamingNotSupportedError
+from celeste.core import Modality, Protocol, Provider
+from celeste.exceptions import (
+    ClientNotFoundError,
+    StreamingNotSupportedError,
+    UnsupportedParameterWarning,
+)
 from celeste.http import HTTPClient, get_http_client
-from celeste.io import Chunk, FinishReason, Input, Output, Usage
+from celeste.io import Chunk as ChunkBase
+from celeste.io import FinishReason, Input, Output, Usage
 from celeste.mime_types import ApplicationMimeType
 from celeste.models import Model
 from celeste.parameters import ParameterMapper, Parameters
 from celeste.streaming import Stream, enrich_stream_errors
+from celeste.tools import ToolCall
 from celeste.types import RawUsage
 
 
@@ -44,7 +51,9 @@ class APIMixin(ABC):
 
     model: Model
     auth: Authentication
-    provider: Provider
+    provider: Provider | None
+    protocol: Protocol | None
+    base_url: str | None
     _content_fields: ClassVar[set[str]] = set()
 
     @property
@@ -130,15 +139,19 @@ class APIMixin(ABC):
         super()._handle_error_response(response)  # type: ignore[misc]
 
 
-class ModalityClient[In: Input, Out: Output, Params: Parameters, Content](
-    APIMixin, BaseModel
-):
+class ModalityClient[
+    In: Input,
+    Out: Output,
+    Params: Parameters,
+    Content,
+    Chunk: ChunkBase,
+](APIMixin, BaseModel):
     """Base class for unified modality clients.
 
     Operation methods in subclasses delegate to _predict().
 
     Example:
-        class ImagesClient(ModalityClient[ImagesInput, ImagesOutput, ImagesParameters, ImageContent]):
+        class ImagesClient(ModalityClient[ImagesInput, ImagesOutput, ImagesParameters, ImageContent, ImageChunk]):
             modality = Modality.IMAGES
 
             async def generate(self, prompt: str, **parameters) -> ImageGenerationOutput:
@@ -153,13 +166,19 @@ class ModalityClient[In: Input, Out: Output, Params: Parameters, Content](
 
     modality: Modality
     model: Model
-    provider: Provider
+    provider: Provider | None = None
+    protocol: Protocol | None = None
     auth: Authentication = Field(exclude=True)
+    base_url: str | None = Field(None, exclude=True)
 
     @property
     def http_client(self) -> HTTPClient:
         """Shared HTTP client with connection pooling."""
-        return get_http_client(self.provider, self.modality)
+        if self.provider is not None:
+            return get_http_client(self.provider, self.modality)
+        if self.protocol is not None:
+            return get_http_client(self.protocol, self.modality)
+        raise ClientNotFoundError(modality=self.modality)
 
     # Namespace properties - implemented by modality clients
     @property
@@ -198,14 +217,20 @@ class ModalityClient[In: Input, Out: Output, Params: Parameters, Content](
         response_data = await self._make_request(
             request_body, endpoint=endpoint, extra_headers=extra_headers, **parameters
         )
-        content = self._parse_content(response_data, **parameters)
+        content = self._parse_content(response_data)
         content = self._transform_output(content, **parameters)
+        tool_calls = self._parse_tool_calls(response_data)
         return self._output_class()(
             content=content,
             usage=self._get_usage(response_data),
             finish_reason=self._get_finish_reason(response_data),
             metadata=self._build_metadata(response_data),
+            tool_calls=tool_calls,
         )
+
+    def _parse_tool_calls(self, response_data: dict[str, Any]) -> list[ToolCall]:
+        """Parse tool calls from response. Override in providers that support tools."""
+        return []
 
     def _stream(
         self,
@@ -213,7 +238,6 @@ class ModalityClient[In: Input, Out: Output, Params: Parameters, Content](
         stream_class: type[Stream[Out, Params, Chunk]],
         *,
         endpoint: str | None = None,
-        base_url: str | None = None,
         extra_body: dict[str, Any] | None = None,
         extra_headers: dict[str, str] | None = None,
         **parameters: Unpack[Params],  # type: ignore[misc]
@@ -246,7 +270,6 @@ class ModalityClient[In: Input, Out: Output, Params: Parameters, Content](
         sse_iterator = self._make_stream_request(
             request_body,
             endpoint=endpoint,
-            base_url=base_url,
             extra_headers=extra_headers,
             **parameters,
         )
@@ -256,7 +279,7 @@ class ModalityClient[In: Input, Out: Output, Params: Parameters, Content](
             transform_output=self._transform_output,
             stream_metadata={
                 "model": self.model.id,
-                "provider": self.provider,
+                "provider": self.provider or self.protocol,
                 "modality": self.modality,
             },
             **parameters,
@@ -277,7 +300,6 @@ class ModalityClient[In: Input, Out: Output, Params: Parameters, Content](
     def _parse_content(
         self,
         response_data: dict[str, Any],
-        **parameters: Unpack[Params],  # type: ignore[misc]
     ) -> Content:
         """Parse content from provider response."""
         ...
@@ -349,12 +371,16 @@ class ModalityClient[In: Input, Out: Output, Params: Parameters, Content](
             response_data = {
                 k: v for k, v in response_data.items() if k not in self._content_fields
             }
-        return {
+        metadata: dict[str, Any] = {
             "model": self.model.id,
-            "provider": self.provider,
             "modality": self.modality,
             "raw_response": response_data,
         }
+        if self.provider is not None:
+            metadata["provider"] = self.provider
+        if self.protocol is not None:
+            metadata["protocol"] = self.protocol
+        return metadata
 
     def _handle_error_response(self, response: httpx.Response) -> None:
         """Handle error responses from provider APIs."""
@@ -371,7 +397,7 @@ class ModalityClient[In: Input, Out: Output, Params: Parameters, Content](
                 error_msg = response.text or f"HTTP {response.status_code}"
 
             raise httpx.HTTPStatusError(
-                f"{self.provider} API error: {error_msg}",
+                f"{self.provider or self.protocol} API error: {error_msg}",
                 request=response.request,
                 response=response,
             )
@@ -384,8 +410,7 @@ class ModalityClient[In: Input, Out: Output, Params: Parameters, Content](
         """Transform content using parameter mapper output transformations."""
         for mapper in self.parameter_mappers():
             value = parameters.get(mapper.name)
-            if value is not None:
-                content = mapper.parse_output(content, value)
+            content = mapper.parse_output(content, value)
         return content
 
     @abstractmethod
@@ -405,8 +430,17 @@ class ModalityClient[In: Input, Out: Output, Params: Parameters, Content](
         request = self._init_request(inputs)
 
         for mapper in self.parameter_mappers():
-            value = parameters.get(mapper.name)
+            value = parameters.pop(mapper.name, None)
             request = mapper.map(request, value, self.model)
+
+        for name, value in parameters.items():
+            if value is not None:
+                warnings.warn(
+                    f"Parameter '{name}' is not supported by model "
+                    f"'{self.model.id}' and will be ignored.",
+                    UnsupportedParameterWarning,
+                    stacklevel=4,
+                )
 
         if extra_body:
             self._deep_merge(request, extra_body)

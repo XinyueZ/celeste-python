@@ -1,16 +1,19 @@
 """Google GenerateContent API parameter mappers."""
 
-import base64
 import json
 from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, TypeAdapter
 
-from celeste.artifacts import ImageArtifact
+from celeste.exceptions import InvalidToolError
 from celeste.mime_types import ApplicationMimeType
 from celeste.models import Model
 from celeste.parameters import ParameterMapper
+from celeste.providers.google.utils import build_media_part
+from celeste.tools import Tool
 from celeste.types import TextContent
+
+from .tools import TOOL_MAPPERS
 
 
 class TemperatureMapper[Content](ParameterMapper[Content]):
@@ -132,27 +135,6 @@ class ImageSizeMapper[Content](ParameterMapper[Content]):
 class MediaContentMapper[Content](ParameterMapper[Content]):
     """Map reference_images to Google contents.parts field."""
 
-    def _build_image_part(self, image: ImageArtifact) -> dict[str, Any]:
-        """Build a Gemini part from an ImageArtifact."""
-        if image.url:
-            return {"file_data": {"file_uri": image.url}}
-
-        if image.data:
-            b64 = (
-                base64.b64encode(image.data).decode("utf-8")
-                if isinstance(image.data, bytes)
-                else image.data
-            )
-            return {"inline_data": {"mime_type": str(image.mime_type), "data": b64}}
-
-        if image.path:
-            with open(image.path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode("utf-8")
-            return {"inline_data": {"mime_type": str(image.mime_type), "data": b64}}
-
-        msg = "ImageArtifact must have url, data, or path"
-        raise ValueError(msg)
-
     def map(
         self,
         request: dict[str, Any],
@@ -165,7 +147,7 @@ class MediaContentMapper[Content](ParameterMapper[Content]):
             return request
 
         # Convert list of ImageArtifact to list of image parts
-        image_parts = [self._build_image_part(img) for img in validated_value]
+        image_parts = [build_media_part(img) for img in validated_value]
 
         # Add image parts before text in contents[0].parts
         if "contents" in request and len(request["contents"]) > 0:
@@ -181,8 +163,8 @@ class MediaContentMapper[Content](ParameterMapper[Content]):
         return request
 
 
-class WebSearchMapper[Content](ParameterMapper[Content]):
-    """Map web_search to Google tools field."""
+class ToolsMapper[Content](ParameterMapper[Content]):
+    """Map tools list to Google tools field."""
 
     def map(
         self,
@@ -190,13 +172,69 @@ class WebSearchMapper[Content](ParameterMapper[Content]):
         value: object,
         model: Model,
     ) -> dict[str, Any]:
-        """Transform web_search into provider request."""
+        """Transform tools into provider request."""
         validated_value = self._validate_value(value, model)
         if not validated_value:
             return request
 
-        request["tools"] = [{"google_search": {}}]
+        dispatch = {m.tool_type: m for m in TOOL_MAPPERS}
+        tools = request.setdefault("tools", [])
+        fn_declarations: list[dict[str, Any]] = []
+
+        for item in validated_value:
+            if isinstance(item, Tool):
+                mapper = dispatch.get(type(item))
+                if mapper is None:
+                    msg = f"Tool '{type(item).__name__}' is not supported by Google"
+                    raise ValueError(msg)
+                tools.append(mapper.map_tool(item))
+            elif isinstance(item, dict) and "name" in item:
+                fn_declarations.append(self._map_user_tool(item))
+            elif isinstance(item, dict):
+                tools.append(item)
+            else:
+                raise InvalidToolError(item)
+
+        if fn_declarations:
+            tools.append({"functionDeclarations": fn_declarations})
+
         return request
+
+    @staticmethod
+    def _map_user_tool(tool: dict[str, Any]) -> dict[str, Any]:
+        """Map a user-defined tool dict to Google functionDeclaration format."""
+        params = tool.get("parameters", {})
+        if isinstance(params, type) and issubclass(params, BaseModel):
+            schema = params.model_json_schema()
+            # Remove unsupported 'title' fields
+            schema = ToolsMapper._remove_titles(schema)
+        else:
+            schema = params
+
+        result: dict[str, Any] = {"name": tool["name"]}
+        if "description" in tool:
+            result["description"] = tool["description"]
+        if schema:
+            result["parameters"] = schema
+        return result
+
+    @staticmethod
+    def _remove_titles(schema: dict[str, Any]) -> dict[str, Any]:
+        """Remove unsupported 'title' fields from schema for Google."""
+        result: dict[str, Any] = {}
+        for key, value in schema.items():
+            if key == "title":
+                continue
+            if isinstance(value, dict):
+                result[key] = ToolsMapper._remove_titles(value)
+            elif isinstance(value, list):
+                result[key] = [
+                    ToolsMapper._remove_titles(item) if isinstance(item, dict) else item
+                    for item in value
+                ]
+            else:
+                result[key] = value
+        return result
 
 
 class ResponseJsonSchemaMapper(ParameterMapper[TextContent]):
@@ -297,5 +335,5 @@ __all__ = [
     "TemperatureMapper",
     "ThinkingBudgetMapper",
     "ThinkingLevelMapper",
-    "WebSearchMapper",
+    "ToolsMapper",
 ]

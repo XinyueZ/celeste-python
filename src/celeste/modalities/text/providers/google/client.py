@@ -1,30 +1,47 @@
 """Google text client (modality)."""
 
-import base64
-from typing import Any, Unpack
+from typing import Any
+from uuid import uuid4
 
-from celeste.artifacts import AudioArtifact, ImageArtifact, VideoArtifact
 from celeste.parameters import ParameterMapper
-from celeste.providers.google.generate_content import config as google_config
 from celeste.providers.google.generate_content.client import GoogleGenerateContentClient
 from celeste.providers.google.generate_content.streaming import (
     GoogleGenerateContentStream as _GoogleGenerateContentStream,
 )
-from celeste.types import AudioContent, ImageContent, Message, TextContent, VideoContent
-from celeste.utils import detect_mime_type
+from celeste.providers.google.utils import build_media_part
+from celeste.tools import ToolCall, ToolResult
+from celeste.types import TextContent
 
 from ...client import TextClient
-from ...io import (
-    TextInput,
-    TextOutput,
-)
-from ...parameters import TextParameters
+from ...io import TextInput
 from ...streaming import TextStream
 from .parameters import GOOGLE_PARAMETER_MAPPERS
 
 
 class GoogleTextStream(_GoogleGenerateContentStream, TextStream):
     """Google streaming for text modality."""
+
+    def _aggregate_tool_calls(
+        self, chunks: list, raw_events: list[dict[str, Any]]
+    ) -> list[ToolCall]:
+        """Extract tool calls from Google streaming events."""
+        tool_calls: list[ToolCall] = []
+        for event in raw_events:
+            for candidate in event.get("candidates", []):
+                for part in candidate.get("content", {}).get("parts", []):
+                    if "functionCall" in part:
+                        kwargs: dict[str, Any] = {}
+                        if "thoughtSignature" in part:
+                            kwargs["thoughtSignature"] = part["thoughtSignature"]
+                        tool_calls.append(
+                            ToolCall(
+                                id=str(uuid4()),
+                                name=part["functionCall"]["name"],
+                                arguments=part["functionCall"].get("args", {}),
+                                **kwargs,
+                            )
+                        )
+        return tool_calls
 
 
 class GoogleTextClient(GoogleGenerateContentClient, TextClient):
@@ -33,45 +50,6 @@ class GoogleTextClient(GoogleGenerateContentClient, TextClient):
     @classmethod
     def parameter_mappers(cls) -> list[ParameterMapper[TextContent]]:
         return GOOGLE_PARAMETER_MAPPERS
-
-    async def generate(
-        self,
-        prompt: str | None = None,
-        *,
-        messages: list[Message] | None = None,
-        **parameters: Unpack[TextParameters],
-    ) -> TextOutput:
-        """Generate text from prompt."""
-        inputs = TextInput(prompt=prompt, messages=messages)
-        return await self._predict(
-            inputs,
-            endpoint=google_config.GoogleGenerateContentEndpoint.GENERATE_CONTENT,
-            **parameters,
-        )
-
-    async def analyze(
-        self,
-        prompt: str | None = None,
-        *,
-        messages: list[Message] | None = None,
-        image: ImageContent | None = None,
-        video: VideoContent | None = None,
-        audio: AudioContent | None = None,
-        **parameters: Unpack[TextParameters],
-    ) -> TextOutput:
-        """Analyze image(s), video(s), or audio with prompt or messages."""
-        inputs = TextInput(
-            prompt=prompt,
-            messages=messages,
-            image=image,
-            video=video,
-            audio=audio,
-        )
-        return await self._predict(
-            inputs,
-            endpoint=google_config.GoogleGenerateContentEndpoint.GENERATE_CONTENT,
-            **parameters,
-        )
 
     def _init_request(self, inputs: TextInput) -> dict[str, Any]:
         """Initialize request from Google contents array format."""
@@ -100,11 +78,36 @@ class GoogleTextClient(GoogleGenerateContentClient, TextClient):
             for msg in inputs.messages:
                 if msg.role in ("system", "developer"):
                     system_parts.extend(content_to_parts(msg.content))
+                elif isinstance(msg, ToolResult):
+                    contents.append(
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "functionResponse": {
+                                        "name": msg.name,
+                                        "response": {"result": msg.content},
+                                    }
+                                }
+                            ],
+                        }
+                    )
                 else:
                     role = "model" if msg.role == "assistant" else msg.role
-                    contents.append(
-                        {"role": role, "parts": content_to_parts(msg.content)}
-                    )
+                    msg_parts = content_to_parts(msg.content)
+                    if msg.tool_calls:
+                        for tc in msg.tool_calls:
+                            part: dict[str, Any] = {
+                                "functionCall": {
+                                    "name": tc.name,
+                                    "args": tc.arguments,
+                                }
+                            }
+                            thought_sig = getattr(tc, "thoughtSignature", None)
+                            if thought_sig:
+                                part["thoughtSignature"] = thought_sig
+                            msg_parts.append(part)
+                    contents.append({"role": role, "parts": msg_parts})
 
             result: dict[str, Any] = {"contents": contents}
             if system_parts:
@@ -117,68 +120,58 @@ class GoogleTextClient(GoogleGenerateContentClient, TextClient):
         if inputs.image is not None:
             images = inputs.image if isinstance(inputs.image, list) else [inputs.image]
             for img in images:
-                parts.append(self._build_image_part(img))
+                parts.append(build_media_part(img))
 
         if inputs.video is not None:
             videos = inputs.video if isinstance(inputs.video, list) else [inputs.video]
             for vid in videos:
-                parts.append(self._build_video_part(vid))
+                parts.append(build_media_part(vid))
 
         if inputs.audio is not None:
             audios = inputs.audio if isinstance(inputs.audio, list) else [inputs.audio]
             for aud in audios:
-                parts.append(self._build_audio_part(aud))
+                parts.append(build_media_part(aud))
 
         parts.append({"text": inputs.prompt or ""})
 
         return {"contents": [{"role": "user", "parts": parts}]}
 
-    def _build_image_part(self, image: ImageArtifact) -> dict[str, Any]:
-        """Build a Gemini part from an ImageArtifact."""
-        if image.url:
-            return {"file_data": {"file_uri": image.url}}
-
-        image_bytes = image.get_bytes()
-        b64 = base64.b64encode(image_bytes).decode("utf-8")
-        mime = image.mime_type or detect_mime_type(image_bytes)
-        mime_str = mime.value if mime else None
-
-        return {"inline_data": {"mime_type": mime_str, "data": b64}}
-
-    def _build_video_part(self, video: VideoArtifact) -> dict[str, Any]:
-        """Build a Gemini part from a VideoArtifact."""
-        if video.url:
-            return {"file_data": {"file_uri": video.url}}
-
-        video_bytes = video.get_bytes()
-        b64 = base64.b64encode(video_bytes).decode("utf-8")
-        mime = video.mime_type or detect_mime_type(video_bytes)
-        mime_str = mime.value if mime else None
-
-        return {"inline_data": {"mime_type": mime_str, "data": b64}}
-
-    def _build_audio_part(self, audio: AudioArtifact) -> dict[str, Any]:
-        """Build a Gemini part from an AudioArtifact."""
-        if audio.url:
-            return {"file_data": {"file_uri": audio.url}}
-
-        audio_bytes = audio.get_bytes()
-        b64 = base64.b64encode(audio_bytes).decode("utf-8")
-        mime = audio.mime_type or detect_mime_type(audio_bytes)
-        mime_str = mime.value if mime else None
-
-        return {"inline_data": {"mime_type": mime_str, "data": b64}}
-
     def _parse_content(
         self,
         response_data: dict[str, Any],
-        **parameters: Unpack[TextParameters],
     ) -> TextContent:
         """Parse content from response."""
         candidates = super()._parse_content(response_data)
         parts = candidates[0].get("content", {}).get("parts", [])
-        text = parts[0].get("text") if parts else ""
-        return text or ""
+        for p in parts:
+            if p.get("thought"):
+                continue
+            text = p.get("text")
+            if text is not None:
+                return text
+        return ""
+
+    def _parse_tool_calls(self, response_data: dict[str, Any]) -> list[ToolCall]:
+        """Parse tool calls from Google response."""
+        candidates = response_data.get("candidates", [])
+        if not candidates:
+            return []
+        parts = candidates[0].get("content", {}).get("parts", [])
+        tool_calls: list[ToolCall] = []
+        for p in parts:
+            if "functionCall" in p:
+                kwargs: dict[str, Any] = {}
+                if "thoughtSignature" in p:
+                    kwargs["thoughtSignature"] = p["thoughtSignature"]
+                tool_calls.append(
+                    ToolCall(
+                        id=str(uuid4()),
+                        name=p["functionCall"]["name"],
+                        arguments=p["functionCall"].get("args", {}),
+                        **kwargs,
+                    )
+                )
+        return tool_calls
 
     def _stream_class(self) -> type[TextStream]:
         """Return the Stream class for this provider."""

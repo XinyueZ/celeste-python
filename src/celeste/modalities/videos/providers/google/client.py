@@ -1,6 +1,6 @@
 """Google videos client."""
 
-from typing import Any, Unpack
+from typing import Any
 
 from celeste.artifacts import VideoArtifact
 from celeste.mime_types import VideoMimeType
@@ -10,13 +10,14 @@ from celeste.providers.google.veo.client import GoogleVeoClient as GoogleVeoMixi
 from celeste.types import VideoContent
 
 from ...client import VideosClient
-from ...io import VideoInput, VideoOutput
-from ...parameters import VideoParameters
+from ...io import VideoInput
 from .parameters import GOOGLE_PARAMETER_MAPPERS
 
 
 class GoogleVideosClient(GoogleVeoMixin, VideosClient):
     """Google client for video generation."""
+
+    _generate_endpoint = config.GoogleVeoEndpoint.CREATE_VIDEO
 
     @classmethod
     def parameter_mappers(cls) -> list[ParameterMapper[VideoContent]]:
@@ -28,23 +29,9 @@ class GoogleVideosClient(GoogleVeoMixin, VideosClient):
             "instances": [{"prompt": inputs.prompt}],
         }
 
-    async def generate(
-        self,
-        prompt: str,
-        **parameters: Unpack[VideoParameters],
-    ) -> VideoOutput:
-        """Generate videos from prompt."""
-        inputs = VideoInput(prompt=prompt)
-        return await self._predict(
-            inputs,
-            endpoint=config.GoogleVeoEndpoint.CREATE_VIDEO,
-            **parameters,
-        )
-
     def _parse_content(
         self,
         response_data: dict[str, Any],
-        **parameters: Unpack[VideoParameters],
     ) -> VideoArtifact:
         """Parse content from response."""
         video_data = super()._parse_content(response_data)

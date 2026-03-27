@@ -1,7 +1,6 @@
 """Gemini client for Google images modality."""
 
-import base64
-from typing import Any, Unpack
+from typing import Any
 
 from celeste.artifacts import ImageArtifact
 from celeste.core import UsageField
@@ -9,68 +8,22 @@ from celeste.mime_types import ImageMimeType
 from celeste.parameters import ParameterMapper
 from celeste.providers.google.generate_content import config as google_config
 from celeste.providers.google.generate_content.client import GoogleGenerateContentClient
+from celeste.providers.google.utils import build_media_part
 from celeste.types import ImageContent
 
 from ...client import ImagesClient
-from ...io import ImageFinishReason, ImageInput, ImageOutput
-from ...parameters import ImageParameters
+from ...io import ImageFinishReason, ImageInput
 from .parameters import GEMINI_PARAMETER_MAPPERS
-
-
-def _build_image_part(image: ImageArtifact) -> dict[str, Any]:
-    """Build a Gemini image part from an ImageArtifact (snake_case, provider-style)."""
-    if image.url:
-        return {"file_data": {"file_uri": image.url}}
-
-    if image.data is not None:
-        image_bytes = image.data
-    elif image.path:
-        with open(image.path, "rb") as f:
-            image_bytes = f.read()
-    else:
-        msg = "ImageArtifact must have url, data, or path"
-        raise ValueError(msg)
-
-    base64_data = base64.b64encode(image_bytes).decode("utf-8")
-    return {
-        "inline_data": {
-            "mime_type": image.mime_type,
-            "data": base64_data,
-        }
-    }
 
 
 class GeminiImagesClient(GoogleGenerateContentClient, ImagesClient):
     """Google Gemini client for images modality (generate + edit)."""
 
+    _edit_endpoint = google_config.GoogleGenerateContentEndpoint.GENERATE_CONTENT
+
     @classmethod
     def parameter_mappers(cls) -> list[ParameterMapper[ImageContent]]:
         return GEMINI_PARAMETER_MAPPERS
-
-    async def generate(
-        self,
-        prompt: str,
-        **parameters: Unpack[ImageParameters],
-    ) -> ImageOutput:
-        inputs = ImageInput(prompt=prompt)
-        return await self._predict(
-            inputs,
-            endpoint=google_config.GoogleGenerateContentEndpoint.GENERATE_CONTENT,
-            **parameters,
-        )
-
-    async def edit(
-        self,
-        image: ImageArtifact,
-        prompt: str,
-        **parameters: Unpack[ImageParameters],
-    ) -> ImageOutput:
-        inputs = ImageInput(prompt=prompt, image=image)
-        return await self._predict(
-            inputs,
-            endpoint=google_config.GoogleGenerateContentEndpoint.GENERATE_CONTENT,
-            **parameters,
-        )
 
     def _init_request(self, inputs: ImageInput) -> dict[str, Any]:
         """Initialize request for Gemini image generation/edit."""
@@ -78,7 +31,7 @@ class GeminiImagesClient(GoogleGenerateContentClient, ImagesClient):
 
         # Edit uses an input image (generation omits it)
         if inputs.image is not None:
-            parts.append(_build_image_part(inputs.image))
+            parts.append(build_media_part(inputs.image))
 
         parts.append({"text": inputs.prompt})
 
@@ -101,7 +54,6 @@ class GeminiImagesClient(GoogleGenerateContentClient, ImagesClient):
     def _parse_content(
         self,
         response_data: dict[str, Any],
-        **parameters: Unpack[ImageParameters],
     ) -> ImageContent:
         """Parse image artifacts from Gemini candidates."""
         candidates = super()._parse_content(response_data)

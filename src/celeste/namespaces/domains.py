@@ -10,7 +10,7 @@ from pydantic import SecretStr
 
 from celeste import Authentication, create_client
 from celeste.artifacts import ImageArtifact
-from celeste.core import Modality, Operation, Provider
+from celeste.core import Modality, Operation, Protocol, Provider
 from celeste.modalities.audio.io import AudioOutput
 from celeste.modalities.audio.parameters import AudioParameters
 from celeste.modalities.audio.streaming import AudioStream
@@ -19,7 +19,7 @@ from celeste.modalities.embeddings.parameters import EmbeddingsParameters
 from celeste.modalities.images.io import ImageOutput
 from celeste.modalities.images.parameters import ImageParameters
 from celeste.modalities.images.streaming import ImagesStream
-from celeste.modalities.text.io import TextInput, TextOutput
+from celeste.modalities.text.io import TextOutput
 from celeste.modalities.text.parameters import TextParameters
 from celeste.modalities.text.streaming import TextStream
 from celeste.modalities.videos.io import VideoOutput
@@ -37,6 +37,7 @@ class SyncStreamTextNamespace:
         messages: list[Message] | None = None,
         model: str,
         provider: Provider | None = None,
+        protocol: Protocol | None = None,
         api_key: str | SecretStr | None = None,
         auth: Authentication | None = None,
         base_url: str | None = None,
@@ -49,13 +50,14 @@ class SyncStreamTextNamespace:
             operation=Operation.GENERATE,
             model=model,
             provider=provider,
+            protocol=protocol,
             api_key=api_key,
             auth=auth,
+            base_url=base_url,
         )
         return client.sync.stream.generate(
             prompt,
             messages=messages,
-            base_url=base_url,
             extra_body=extra_body,
             **params,
         )
@@ -71,6 +73,7 @@ class StreamTextNamespace:
         messages: list[Message] | None = None,
         model: str,
         provider: Provider | None = None,
+        protocol: Protocol | None = None,
         api_key: str | SecretStr | None = None,
         auth: Authentication | None = None,
         base_url: str | None = None,
@@ -83,13 +86,14 @@ class StreamTextNamespace:
             operation=Operation.GENERATE,
             model=model,
             provider=provider,
+            protocol=protocol,
             api_key=api_key,
             auth=auth,
+            base_url=base_url,
         )
         return client.stream.generate(
             prompt,
             messages=messages,
-            base_url=base_url,
             extra_body=extra_body,
             **params,
         )
@@ -105,6 +109,7 @@ class SyncTextNamespace:
         messages: list[Message] | None = None,
         model: str,
         provider: Provider | None = None,
+        protocol: Protocol | None = None,
         api_key: str | SecretStr | None = None,
         auth: Authentication | None = None,
         base_url: str | None = None,
@@ -117,21 +122,25 @@ class SyncTextNamespace:
             operation=Operation.GENERATE,
             model=model,
             provider=provider,
+            protocol=protocol,
             api_key=api_key,
             auth=auth,
+            base_url=base_url,
         )
         return client.sync.generate(
             prompt,
             messages=messages,
-            base_url=base_url,
             extra_body=extra_body,
             **params,
         )
 
     def embed(
         self,
-        text: str | list[str],
+        text: str | list[str] | None = None,
         *,
+        images: ImageContent | None = None,
+        videos: VideoContent | None = None,
+        audio: AudioContent | None = None,
         model: str,
         provider: Provider | None = None,
         api_key: str | SecretStr | None = None,
@@ -147,7 +156,9 @@ class SyncTextNamespace:
             api_key=api_key,
             auth=auth,
         )
-        return client.sync.embed(text, **params)
+        return client.sync.embed(
+            text, images=images, videos=videos, audio=audio, **params
+        )
 
     @property
     def stream(self) -> SyncStreamTextNamespace:
@@ -168,6 +179,7 @@ class TextNamespace:
         messages: list[Message] | None = None,
         model: str,
         provider: Provider | None = None,
+        protocol: Protocol | None = None,
         api_key: str | SecretStr | None = None,
         auth: Authentication | None = None,
         base_url: str | None = None,
@@ -181,9 +193,10 @@ class TextNamespace:
             messages: List of messages for multi-turn conversations.
             model: Model ID to use (required).
             provider: Optional provider override.
+            protocol: Wire format protocol for compatible APIs (e.g., "openresponses").
             api_key: Optional API key override.
             auth: Optional Authentication object (e.g., GoogleADC for Vertex AI).
-            base_url: Optional base URL for OpenResponses providers.
+            base_url: Custom base URL for compatible APIs or proxy endpoints.
             extra_body: Optional provider-specific request body fields.
             **parameters: Additional model parameters.
 
@@ -195,28 +208,35 @@ class TextNamespace:
             operation=Operation.GENERATE,
             model=model,
             provider=provider,
+            protocol=protocol,
             api_key=api_key,
             auth=auth,
+            base_url=base_url,
         )
-        inputs = TextInput(prompt=prompt, messages=messages)
-        return await client._predict(
-            inputs, base_url=base_url, extra_body=extra_body, **parameters
+        return await client.generate(
+            prompt, messages=messages, extra_body=extra_body, **parameters
         )
 
     async def embed(
         self,
-        text: str | list[str],
+        text: str | list[str] | None = None,
         *,
+        images: ImageContent | None = None,
+        videos: VideoContent | None = None,
+        audio: AudioContent | None = None,
         model: str,
         provider: Provider | None = None,
         api_key: str | SecretStr | None = None,
         auth: Authentication | None = None,
         **parameters: Unpack[EmbeddingsParameters],
     ) -> EmbeddingsOutput:
-        """Generate embeddings from text.
+        """Generate embeddings from text, images, video, or audio.
 
         Args:
             text: Text to embed. Single string or list of strings.
+            images: Image(s) to embed. Single ImageArtifact or list.
+            videos: Video(s) to embed. Single VideoArtifact or list.
+            audio: Audio file(s) to embed. Single AudioArtifact or list.
             model: Model ID to use (required).
             provider: Optional provider override.
             api_key: Optional API key override.
@@ -234,7 +254,9 @@ class TextNamespace:
             api_key=api_key,
             auth=auth,
         )
-        return await client.embed(text, **parameters)
+        return await client.embed(
+            text, images=images, videos=videos, audio=audio, **parameters
+        )
 
     @property
     def sync(self) -> SyncTextNamespace:
@@ -458,6 +480,27 @@ class SyncImagesNamespace:
         )
         return client.sync.analyze(prompt, messages=messages, image=image, **params)
 
+    def embed(
+        self,
+        images: ImageContent,
+        *,
+        model: str,
+        provider: Provider | None = None,
+        api_key: str | SecretStr | None = None,
+        auth: Authentication | None = None,
+        **params: Unpack[EmbeddingsParameters],
+    ) -> EmbeddingsOutput:
+        """Blocking image embeddings generation."""
+        client = create_client(
+            modality=Modality.EMBEDDINGS,
+            operation=Operation.EMBED,
+            model=model,
+            provider=provider,
+            api_key=api_key,
+            auth=auth,
+        )
+        return client.sync.embed(images=images, **params)
+
     @property
     def stream(self) -> SyncStreamImagesNamespace:
         """Access sync streaming image operations."""
@@ -576,6 +619,39 @@ class ImagesNamespace:
         return await client.analyze(
             prompt, messages=messages, image=image, **parameters
         )
+
+    async def embed(
+        self,
+        images: ImageContent,
+        *,
+        model: str,
+        provider: Provider | None = None,
+        api_key: str | SecretStr | None = None,
+        auth: Authentication | None = None,
+        **parameters: Unpack[EmbeddingsParameters],
+    ) -> EmbeddingsOutput:
+        """Generate embeddings from images.
+
+        Args:
+            images: Image or list of images to embed.
+            model: Model ID to use (required).
+            provider: Optional provider override.
+            api_key: Optional API key override.
+            auth: Optional Authentication object (e.g., GoogleADC for Vertex AI).
+            **parameters: Additional model parameters.
+
+        Returns:
+            EmbeddingsOutput with embedding vectors.
+        """
+        client = create_client(
+            modality=Modality.EMBEDDINGS,
+            operation=Operation.EMBED,
+            model=model,
+            provider=provider,
+            api_key=api_key,
+            auth=auth,
+        )
+        return await client.embed(images=images, **parameters)
 
     @property
     def sync(self) -> SyncImagesNamespace:
@@ -733,6 +809,27 @@ class SyncAudioNamespace:
         )
         return client.sync.analyze(prompt, messages=messages, audio=audio, **params)
 
+    def embed(
+        self,
+        audio: AudioContent,
+        *,
+        model: str,
+        provider: Provider | None = None,
+        api_key: str | SecretStr | None = None,
+        auth: Authentication | None = None,
+        **params: Unpack[EmbeddingsParameters],
+    ) -> EmbeddingsOutput:
+        """Blocking audio embeddings generation."""
+        client = create_client(
+            modality=Modality.EMBEDDINGS,
+            operation=Operation.EMBED,
+            model=model,
+            provider=provider,
+            api_key=api_key,
+            auth=auth,
+        )
+        return client.sync.embed(audio=audio, **params)
+
     @property
     def stream(self) -> SyncStreamAudioNamespace:
         """Access sync streaming audio operations."""
@@ -816,6 +913,39 @@ class AudioNamespace:
         return await client.analyze(
             prompt, messages=messages, audio=audio, **parameters
         )
+
+    async def embed(
+        self,
+        audio: AudioContent,
+        *,
+        model: str,
+        provider: Provider | None = None,
+        api_key: str | SecretStr | None = None,
+        auth: Authentication | None = None,
+        **parameters: Unpack[EmbeddingsParameters],
+    ) -> EmbeddingsOutput:
+        """Generate embeddings from audio.
+
+        Args:
+            audio: Audio or list of audio files to embed.
+            model: Model ID to use (required).
+            provider: Optional provider override.
+            api_key: Optional API key override.
+            auth: Optional Authentication object (e.g., GoogleADC for Vertex AI).
+            **parameters: Additional model parameters.
+
+        Returns:
+            EmbeddingsOutput with embedding vectors.
+        """
+        client = create_client(
+            modality=Modality.EMBEDDINGS,
+            operation=Operation.EMBED,
+            model=model,
+            provider=provider,
+            api_key=api_key,
+            auth=auth,
+        )
+        return await client.embed(audio=audio, **parameters)
 
     @property
     def sync(self) -> SyncAudioNamespace:
@@ -931,6 +1061,27 @@ class SyncVideosNamespace:
         )
         return client.sync.analyze(prompt, messages=messages, video=video, **params)
 
+    def embed(
+        self,
+        videos: VideoContent,
+        *,
+        model: str,
+        provider: Provider | None = None,
+        api_key: str | SecretStr | None = None,
+        auth: Authentication | None = None,
+        **params: Unpack[EmbeddingsParameters],
+    ) -> EmbeddingsOutput:
+        """Blocking video embeddings generation."""
+        client = create_client(
+            modality=Modality.EMBEDDINGS,
+            operation=Operation.EMBED,
+            model=model,
+            provider=provider,
+            api_key=api_key,
+            auth=auth,
+        )
+        return client.sync.embed(videos=videos, **params)
+
     @property
     def stream(self) -> SyncStreamVideosNamespace:
         """Access sync streaming video operations."""
@@ -1014,6 +1165,39 @@ class VideosNamespace:
         return await client.analyze(
             prompt, messages=messages, video=video, **parameters
         )
+
+    async def embed(
+        self,
+        videos: VideoContent,
+        *,
+        model: str,
+        provider: Provider | None = None,
+        api_key: str | SecretStr | None = None,
+        auth: Authentication | None = None,
+        **parameters: Unpack[EmbeddingsParameters],
+    ) -> EmbeddingsOutput:
+        """Generate embeddings from videos.
+
+        Args:
+            videos: Video or list of videos to embed.
+            model: Model ID to use (required).
+            provider: Optional provider override.
+            api_key: Optional API key override.
+            auth: Optional Authentication object (e.g., GoogleADC for Vertex AI).
+            **parameters: Additional model parameters.
+
+        Returns:
+            EmbeddingsOutput with embedding vectors.
+        """
+        client = create_client(
+            modality=Modality.EMBEDDINGS,
+            operation=Operation.EMBED,
+            model=model,
+            provider=provider,
+            api_key=api_key,
+            auth=auth,
+        )
+        return await client.embed(videos=videos, **parameters)
 
     @property
     def sync(self) -> SyncVideosNamespace:

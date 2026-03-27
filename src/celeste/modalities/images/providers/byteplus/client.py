@@ -19,7 +19,6 @@ from ...client import ImagesClient
 from ...io import (
     ImageChunk,
     ImageInput,
-    ImageOutput,
     ImageUsage,
 )
 from ...parameters import ImageParameters
@@ -94,22 +93,11 @@ class BytePlusImagesStream(_BytePlusImagesStream, ImagesStream):
 class BytePlusImagesClient(BytePlusImagesMixin, ImagesClient):
     """BytePlus images client (generate + streaming)."""
 
+    _generate_endpoint = config.BytePlusImagesEndpoint.CREATE_IMAGE
+
     @classmethod
     def parameter_mappers(cls) -> list[ParameterMapper[ImageContent]]:
         return BYTEPLUS_PARAMETER_MAPPERS
-
-    async def generate(
-        self,
-        prompt: str,
-        **parameters: Unpack[ImageParameters],
-    ) -> ImageOutput:
-        """Generate images from prompt."""
-        inputs = ImageInput(prompt=prompt)
-        return await self._predict(
-            inputs,
-            endpoint=config.BytePlusImagesEndpoint.CREATE_IMAGE,
-            **parameters,
-        )
 
     def _init_request(self, inputs: ImageInput) -> dict[str, Any]:
         """Initialize request from BytePlus API structure."""
@@ -121,7 +109,6 @@ class BytePlusImagesClient(BytePlusImagesMixin, ImagesClient):
     def _parse_content(
         self,
         response_data: dict[str, Any],
-        **parameters: Unpack[ImageParameters],
     ) -> ImageArtifact:
         """Parse content from response."""
         content = super()._parse_content(response_data)

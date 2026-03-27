@@ -1,14 +1,14 @@
 """xAI models for text modality."""
 
 from celeste.constraints import (
-    Bool,
     Choice,
-    ImagesConstraint,
     Range,
     Schema,
+    ToolSupport,
 )
 from celeste.core import Modality, Operation, Parameter, Provider
 from celeste.models import Model
+from celeste.tools import CodeExecution, WebSearch, XSearch
 
 from ...parameters import TextParameter
 
@@ -22,10 +22,8 @@ MODELS: list[Model] = [
         parameter_constraints={
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0),
             Parameter.MAX_TOKENS: Range(min=1, max=30000),
+            TextParameter.TOOLS: ToolSupport(tools=[WebSearch, XSearch, CodeExecution]),
             TextParameter.OUTPUT_SCHEMA: Schema(),
-            TextParameter.WEB_SEARCH: Bool(),
-            TextParameter.X_SEARCH: Bool(),
-            TextParameter.CODE_EXECUTION: Bool(),
         },
     ),
     Model(
@@ -37,10 +35,8 @@ MODELS: list[Model] = [
         parameter_constraints={
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0),
             Parameter.MAX_TOKENS: Range(min=1, max=30000),
+            TextParameter.TOOLS: ToolSupport(tools=[WebSearch, XSearch, CodeExecution]),
             TextParameter.OUTPUT_SCHEMA: Schema(),
-            TextParameter.WEB_SEARCH: Bool(),
-            TextParameter.X_SEARCH: Bool(),
-            TextParameter.CODE_EXECUTION: Bool(),
         },
     ),
     Model(
@@ -52,10 +48,8 @@ MODELS: list[Model] = [
         parameter_constraints={
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0),
             Parameter.MAX_TOKENS: Range(min=1, max=30000),
+            TextParameter.TOOLS: ToolSupport(tools=[WebSearch, XSearch, CodeExecution]),
             TextParameter.OUTPUT_SCHEMA: Schema(),
-            TextParameter.WEB_SEARCH: Bool(),
-            TextParameter.X_SEARCH: Bool(),
-            TextParameter.CODE_EXECUTION: Bool(),
         },
     ),
     Model(
@@ -67,10 +61,8 @@ MODELS: list[Model] = [
         parameter_constraints={
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0),
             Parameter.MAX_TOKENS: Range(min=1, max=30000),
+            TextParameter.TOOLS: ToolSupport(tools=[WebSearch, XSearch, CodeExecution]),
             TextParameter.OUTPUT_SCHEMA: Schema(),
-            TextParameter.WEB_SEARCH: Bool(),
-            TextParameter.X_SEARCH: Bool(),
-            TextParameter.CODE_EXECUTION: Bool(),
         },
     ),
     Model(
@@ -82,10 +74,34 @@ MODELS: list[Model] = [
         parameter_constraints={
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0),
             Parameter.MAX_TOKENS: Range(min=1, max=64000),
+            TextParameter.TOOLS: ToolSupport(tools=[WebSearch, XSearch, CodeExecution]),
             TextParameter.OUTPUT_SCHEMA: Schema(),
-            TextParameter.WEB_SEARCH: Bool(),
-            TextParameter.X_SEARCH: Bool(),
-            TextParameter.CODE_EXECUTION: Bool(),
+        },
+    ),
+    Model(
+        id="grok-4.20-beta-0309-reasoning",
+        provider=Provider.XAI,
+        display_name="Grok 4.20 Beta 0309 Reasoning",
+        operations={Modality.TEXT: {Operation.GENERATE}},
+        streaming=True,
+        parameter_constraints={
+            Parameter.TEMPERATURE: Range(min=0.0, max=2.0),
+            Parameter.MAX_TOKENS: Range(min=1, max=30000),
+            TextParameter.TOOLS: ToolSupport(tools=[WebSearch, XSearch, CodeExecution]),
+            TextParameter.OUTPUT_SCHEMA: Schema(),
+        },
+    ),
+    Model(
+        id="grok-4.20-beta-0309-non-reasoning",
+        provider=Provider.XAI,
+        display_name="Grok 4.20 Beta 0309 Non Reasoning",
+        operations={Modality.TEXT: {Operation.GENERATE}},
+        streaming=True,
+        parameter_constraints={
+            Parameter.TEMPERATURE: Range(min=0.0, max=2.0),
+            Parameter.MAX_TOKENS: Range(min=1, max=30000),
+            TextParameter.TOOLS: ToolSupport(tools=[WebSearch, XSearch, CodeExecution]),
+            TextParameter.OUTPUT_SCHEMA: Schema(),
         },
     ),
     Model(
@@ -98,22 +114,8 @@ MODELS: list[Model] = [
             Parameter.TEMPERATURE: Range(min=0.0, max=2.0),
             Parameter.MAX_TOKENS: Range(min=1, max=16000),
             TextParameter.THINKING_BUDGET: Choice(options=["low", "high"]),
+            TextParameter.TOOLS: ToolSupport(tools=[]),
             TextParameter.OUTPUT_SCHEMA: Schema(),
-            TextParameter.WEB_SEARCH: Bool(),
-            TextParameter.X_SEARCH: Bool(),
-            TextParameter.CODE_EXECUTION: Bool(),
-        },
-    ),
-    Model(
-        id="grok-2-vision-1212",
-        provider=Provider.XAI,
-        display_name="Grok 2 Vision",
-        operations={Modality.TEXT: {Operation.GENERATE, Operation.ANALYZE}},
-        streaming=True,
-        parameter_constraints={
-            Parameter.TEMPERATURE: Range(min=0.0, max=2.0),
-            Parameter.MAX_TOKENS: Range(min=1, max=32768),
-            TextParameter.IMAGE: ImagesConstraint(),
         },
     ),
 ]

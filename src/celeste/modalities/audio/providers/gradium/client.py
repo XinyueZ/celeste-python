@@ -1,6 +1,6 @@
 """Gradium audio client."""
 
-from typing import Any, Unpack
+from typing import Any
 
 from celeste.artifacts import AudioArtifact
 from celeste.parameters import ParameterMapper
@@ -17,9 +17,7 @@ from ...client import AudioClient
 from ...io import (
     AudioChunk,
     AudioInput,
-    AudioOutput,
 )
-from ...parameters import AudioParameters
 from ...streaming import AudioStream
 from .parameters import GRADIUM_PARAMETER_MAPPERS
 
@@ -40,22 +38,11 @@ class GradiumAudioStream(_GradiumTextToSpeechStream, AudioStream):
 class GradiumAudioClient(GradiumTextToSpeechMixin, AudioClient):
     """Gradium audio client (TTS)."""
 
+    _speak_endpoint = config.GradiumTextToSpeechEndpoint.CREATE_SPEECH
+
     @classmethod
     def parameter_mappers(cls) -> list[ParameterMapper[AudioContent]]:
         return GRADIUM_PARAMETER_MAPPERS
-
-    async def speak(
-        self,
-        text: str,
-        **parameters: Unpack[AudioParameters],
-    ) -> AudioOutput:
-        """Convert text to speech audio."""
-        inputs = AudioInput(text=text)
-        return await self._predict(
-            inputs,
-            endpoint=config.GradiumTextToSpeechEndpoint.CREATE_SPEECH,
-            **parameters,
-        )
 
     def _init_request(self, inputs: AudioInput) -> dict[str, Any]:
         """Initialize request with text input."""
@@ -64,7 +51,6 @@ class GradiumAudioClient(GradiumTextToSpeechMixin, AudioClient):
     def _parse_content(
         self,
         response_data: dict[str, Any],
-        **parameters: Unpack[AudioParameters],
     ) -> AudioArtifact:
         """Extract audio bytes from response."""
         audio_bytes = response_data.get("audio_bytes")
@@ -72,10 +58,7 @@ class GradiumAudioClient(GradiumTextToSpeechMixin, AudioClient):
             msg = "No audio data in response"
             raise ValueError(msg)
 
-        output_format = parameters.get("output_format")
-        mime_type = self._map_output_format_to_mime_type(output_format)
-
-        return AudioArtifact(data=audio_bytes, mime_type=mime_type)
+        return AudioArtifact(data=audio_bytes)
 
     def _stream_class(self) -> type[AudioStream]:
         """Return the Stream class for this provider."""

@@ -13,7 +13,6 @@ from .mistral import MistralTextClient
 from .moonshot import MoonshotTextClient
 from .ollama import OllamaTextClient
 from .openai import OpenAITextClient
-from .openresponses import OpenResponsesTextClient
 from .xai import XAITextClient
 
 PROVIDERS: dict[Provider, type[TextClient]] = {
@@ -24,7 +23,6 @@ PROVIDERS: dict[Provider, type[TextClient]] = {
     Provider.GROQ: GroqTextClient,
     Provider.HUGGINGFACE: HuggingFaceTextClient,
     Provider.OLLAMA: OllamaTextClient,
-    Provider.OPENRESPONSES: OpenResponsesTextClient,
     Provider.MISTRAL: MistralTextClient,
     Provider.MOONSHOT: MoonshotTextClient,
     Provider.OPENAI: OpenAITextClient,
